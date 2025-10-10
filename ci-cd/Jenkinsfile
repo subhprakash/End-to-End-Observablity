@@ -41,7 +41,6 @@ pipeline {
             steps {
                 echo "Setting KUBECONFIG for Minikube access..."
                 // Minikube ko batane ke liye ki Jenkins context use kare
-                bat "minikube update-context"
                 bat "minikube profile minikube"
             }
         }
