@@ -37,6 +37,15 @@ pipeline {
             }
         }
 
+        stage('4.5. Kubeconfig Setup') {
+            steps {
+                echo "Setting KUBECONFIG for Minikube access..."
+                // Minikube ko batane ke liye ki Jenkins context use kare
+                bat "minikube update-context"
+                bat "minikube profile minikube"
+            }
+        }
+
         stage('5. Deploy Observability & App') {
             steps {
                 echo "--- Deploying Loki Stack (Prometheus, Loki, Grafana) ---"
