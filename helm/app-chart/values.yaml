@@ -1,0 +1,11 @@
+replicaCount: 1
+
+image:
+  repository: akkicasm06/cloud-native-test-app
+  tag: latest
+  pullPolicy: IfNotPresent
+
+service:
+  type: LoadBalancer 
+  port: 80
+  targetPort: 3000
