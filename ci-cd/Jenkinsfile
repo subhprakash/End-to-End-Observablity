@@ -26,6 +26,20 @@ pipeline {
                 }
             }
         }
+        // ... (After stage('3. Push Image to Docker Hub'))
+
+        stage('3.5. Quality Assurance (Testing & Scanning)') {
+            steps {
+                echo "--- TO BE IMPLEMENTED: Application Testing ---"
+                
+                
+                echo "--- TO BE IMPLEMENTED: Docker Image Vulnerability Scan ---"
+                
+                
+                
+                echo "Quality assurance stage complete. Proceeding to deployment."
+            }
+        }
 
         stage('4. Helm Lint') {
             steps {

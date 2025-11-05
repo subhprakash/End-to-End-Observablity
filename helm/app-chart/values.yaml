@@ -9,3 +9,25 @@ service:
   type: LoadBalancer 
   port: 80
   targetPort: 3000
+
+
+
+# NEW: Application Resource Definitions
+resources:
+  limits:
+    cpu: 300m
+    memory: 256Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+# NEW: Liveness and Readiness Probes
+probes:
+  liveness:
+    enabled: true
+    initialDelaySeconds: 5
+    periodSeconds: 10
+  readiness:
+    enabled: true
+    initialDelaySeconds: 5
+    periodSeconds: 10

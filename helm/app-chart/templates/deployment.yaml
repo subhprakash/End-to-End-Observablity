@@ -10,6 +10,7 @@ spec:
   template:
     metadata:
       labels: { app: test-app }
+    # ... (existing content before containers)
     spec:
       containers:
         - name: test-app-container
@@ -18,3 +19,27 @@ spec:
           ports:
             - name: http
               containerPort: 3000
+          
+          # 1. NEW: Resource Limits and Requests
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+
+          # 2. NEW: Liveness Probe (Restarts container if app is unhealthy on '/')
+          {{- if .Values.probes.liveness.enabled }}
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http # Kubernetes automatically resolves 'http' to containerPort 3000
+            initialDelaySeconds: {{ .Values.probes.liveness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.liveness.periodSeconds }}
+          {{- end }}
+          
+          # 3. NEW: Readiness Probe (Stops sending traffic if app is not ready on '/')
+          {{- if .Values.probes.readiness.enabled }}
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: {{ .Values.probes.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.readiness.periodSeconds }}
+          {{- end }}
