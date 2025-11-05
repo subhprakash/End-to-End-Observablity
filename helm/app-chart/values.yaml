@@ -25,9 +25,9 @@ resources:
 probes:
   liveness:
     enabled: true
-    initialDelaySeconds: 5
+    initialDelaySeconds: 30
     periodSeconds: 10
   readiness:
     enabled: true
-    initialDelaySeconds: 5
+    initialDelaySeconds: 30
     periodSeconds: 10
