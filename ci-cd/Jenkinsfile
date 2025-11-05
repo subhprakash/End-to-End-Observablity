@@ -51,41 +51,42 @@ pipeline {
             }
         }
 
+// ... (content before Stage 4.5)
+
         stage('4.5. Kubeconfig Setup') {
             steps {
-                echo "Setting KUBECONFIG variable for Windows/Minikube authentication..."
-                // KUBECONFIG variable ko set karke 'bat' command chalao
-                withEnv(['KUBECONFIG=C:\\Users\\aksha\\.kube\\config']) {
-                    bat "minikube update-context"
-                }
-                // Nayi Kubeconfig set hone ke baad context ko finalise karein
-                bat "minikube profile minikube"
+                echo "Kubeconfig path defined and environment variables are set for next stage."
+                // Failing minikube commands (update-context & profile minikube) removed.
+                // KUBECONFIG variable will be set in Stage 5 (Deploy) block.
             }
         }
 
         stage('5. Deploy Observability & App') {
-            steps {
-                echo "--- Deploying Loki Stack (Prometheus, Loki, Grafana) ---"
-                // 1. Loki stack repo add karein
-                bat "helm repo add loki https://grafana.github.io/helm-charts --force-update"
-                
-                // 2. Loki Stack (Prometheus, Grafana, Promtail/Fluentd) ko install karein
-                bat """
-                helm upgrade --install loki-stack loki/loki-stack ^
-                --set grafana.enabled=true ^
-                --set prometheus.enabled=true ^
-                --set promtail.enabled=true ^
-                --wait --timeout 5m
-                """
-                
-                echo "--- Deploying Custom Test Application ---\n"
-                // 3. Custom App deploy karein
-                bat """
-                helm upgrade --install test-app-release ${HELM_CHART_PATH} ^
-                --set image.repository=${DOCKER_IMAGE} ^
-                --set image.tag=${IMAGE_TAG} ^
-                --wait --timeout 5m
-                """
+            // NEW: KUBECONFIG setting applied here, for Helm commands
+            withEnv(['KUBECONFIG=C:\\Users\\aksha\\.kube\\config']) {
+                steps {
+                    echo "--- Deploying Loki Stack (Prometheus, Loki, Grafana) ---"
+                    // 1. Loki stack repo add karein
+                    bat "helm repo add loki https://grafana.github.io/helm-charts --force-update"
+                    
+                    // 2. Loki Stack (Prometheus, Grafana, Promtail/Fluentd) ko install karein
+                    bat """
+                    helm upgrade --install loki-stack loki/loki-stack ^
+                    --set grafana.enabled=true ^
+                    --set prometheus.enabled=true ^
+                    --set promtail.enabled=true ^
+                    --wait --timeout 5m
+                    """
+                    
+                    echo "--- Deploying Custom Test Application ---\n"
+                    // 3. Custom App deploy karein
+                    bat """
+                    helm upgrade --install test-app-release ${HELM_CHART_PATH} ^
+                    --set image.repository=${DOCKER_IMAGE} ^
+                    --set image.tag=${IMAGE_TAG} ^
+                    --wait --timeout 5m
+                    """
+                }
             }
         }
     }
