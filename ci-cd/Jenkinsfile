@@ -6,7 +6,9 @@ pipeline {
         DOCKER_IMAGE = "akkicasm06/cloud-native-test-app"
         IMAGE_TAG = "${env.BUILD_ID}"
         HELM_CHART_PATH = "helm/app-chart"
+        NAMESPACE = "observability"
     }
+
     stages {
         stage('1. Code Checkout') { 
             steps { 
@@ -24,10 +26,9 @@ pipeline {
 
         stage('3. Push Image to Docker Hub') {
             steps {
-                // Credential ID fix: '5ead5699-f937-4fbe-9ceb-3dab4fab56024'
                 withCredentials([usernamePassword(credentialsId: '5ead5699-f937-4fbe-9ceb-3dab4fab56024', passwordVariable: 'DOCKER_PASSWORD', usernameVariable: 'DOCKER_USERNAME')]) {
                     bat "docker login -u ${DOCKER_USERNAME} -p ${DOCKER_PASSWORD}"
-                    echo "Image Docker Hub Push."
+                    echo "Pushing image to Docker Hub..."
                     bat "docker push ${DOCKER_IMAGE}:${IMAGE_TAG}"
                 }
             }
@@ -35,15 +36,12 @@ pipeline {
 
         stage('3.5. Quality Assurance (Testing & Scanning)') {
             steps {
-                echo "--- TO BE IMPLEMENTED: Application Testing (e.g., npm test) ---"
-                echo "--- TO BE IMPLEMENTED: Docker Image Vulnerability Scan (e.g., Trivy) ---"
-                echo "Quality assurance stage complete. Proceeding to deployment."
+                echo "--- TO BE IMPLEMENTED: App Testing & Security Scan ---"
             }
         }
 
         stage('4. Helm Lint') {
             steps {
-                echo "Helm chart ki syntax (lint) checking ho rahi hai."
                 dir('helm/app-chart') {
                     bat "helm lint ."
                 }
@@ -52,42 +50,60 @@ pipeline {
 
         stage('4.5. Kubeconfig Setup') {
             steps {
-                echo "Kubeconfig path defined and environment variables are set for next stage."
+                echo "Kubeconfig path defined for Helm commands."
             }
         }
 
         stage('5. Deploy Observability & App') {
-            steps { // withEnv must be inside steps block
-                // KUBECONFIG variable set for the Helm commands
+            steps {
                 withEnv(['KUBECONFIG=C:\\Users\\aksha\\.kube\\config']) {
-                    
-                    // 1. GRAFANA (Visualization) ko alag deploy karein (10m timeout)
-                    echo "--- 1. Deploying Grafana (Visualization) ---"
+
+                    // Create namespace
+                    bat "kubectl create namespace ${NAMESPACE} --dry-run=client -o yaml | kubectl apply -f -"
+
+                    echo "--- Adding Helm Repositories ---"
                     bat "helm repo add grafana https://grafana.github.io/helm-charts --force-update"
+                    bat "helm repo add prometheus-community https://prometheus-community.github.io/helm-charts --force-update"
+                    bat "helm repo update"
+
+                    echo "--- 1. Deploying Loki (SingleBinary, Local Storage) ---"
                     bat """
-                    helm upgrade --install grafana grafana/grafana ^
-                    --set persistence.enabled=false ^
-                    --wait --timeout 10m 
-                    """
-                    
-                    // 2. LOKI (Logging Store) aur Promtail ko alag deploy karein (10m timeout)
-                    echo "--- 2. Deploying Loki (Logging Store) & Promtail ---"
-                    bat "helm repo add loki https://grafana.github.io/helm-charts --force-update" 
-                    bat """
-                    helm upgrade --install loki loki/loki ^
-                    --set persistence.enabled=false ^
-                    --set promtail.enabled=true ^
+                    helm upgrade --install loki grafana/loki ^
+                    -f helm/observability/loki-values.yaml ^
+                    -n ${NAMESPACE} ^
+                    --set loki.useTestSchema=true ^
+                    --set read.replicas=0 ^
+                    --set write.replicas=0 ^
+                    --set backend.replicas=0 ^
                     --wait --timeout 10m
                     """
-                    
-                    echo "--- 3. Deploying Custom Test Application ---\n"
-                    // 3. Custom App deploy karein (5m timeout)
+
+                    echo "--- 2. Deploying Promtail (Log Collector) ---"
+                    bat """
+                    helm upgrade --install promtail grafana/promtail ^
+                    -f helm/observability/promtail-values.yaml ^
+                    -n ${NAMESPACE} ^
+                    --wait --timeout 5m
+                    """
+
+                    echo "--- 3. Deploying Grafana (Dashboard) ---"
+                    bat """
+                    helm upgrade --install grafana grafana/grafana ^
+                    -f helm/observability/grafana-values.yaml ^
+                    -n ${NAMESPACE} ^
+                    --wait --timeout 5m
+                    """
+
+                    echo "--- 4. Deploying Custom Application ---"
                     bat """
                     helm upgrade --install test-app-release ${HELM_CHART_PATH} ^
                     --set image.repository=${DOCKER_IMAGE} ^
                     --set image.tag=${IMAGE_TAG} ^
                     --wait --timeout 5m
                     """
+
+                    echo "--- ✅ Deployment Complete. Checking Pods ---"
+                    bat "kubectl get pods -n ${NAMESPACE}"
                 }
             }
         }

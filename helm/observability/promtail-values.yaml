@@ -1,0 +1,8 @@
+config:
+  clients:
+    - url: http://loki-gateway.observability.svc.cluster.local/loki/api/v1/push
+      tenant_id: foo
+  positions:
+    filename: /run/promtail/positions.yaml
+  server:
+    http_listen_port: 3101

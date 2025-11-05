@@ -1,0 +1,38 @@
+deploymentMode: SingleBinary
+
+lokiCanary:
+  enabled: true
+
+read:
+  replicas: 0
+write:
+  replicas: 0
+backend:
+  replicas: 0
+
+loki:
+  commonConfig:
+    replication_factor: 1
+  storage:
+    type: filesystem
+    filesystem:
+      chunks_directory: /var/loki/chunks
+      rules_directory: /var/loki/rules
+  storage_config:
+    boltdb_shipper:
+      active_index_directory: /var/loki/index
+      cache_location: /var/loki/cache
+      shared_store: filesystem
+  compactor:
+    shared_store: filesystem
+
+singleBinary:
+  replicas: 1
+  persistence:
+    enabled: false
+  extraVolumeMounts:
+    - name: tmp
+      mountPath: /var/loki
+  extraVolumes:
+    - name: tmp
+      emptyDir: {}
