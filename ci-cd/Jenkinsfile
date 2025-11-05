@@ -24,7 +24,7 @@ pipeline {
 
         stage('3. Push Image to Docker Hub') {
             steps {
-                // Triple quotes (''') mein UUID fix applied hai. Single quotes used for cleaner Groovy syntax.
+                // Credential ID fix: '5ead5699-f937-4fbe-9ceb-3dab4fab56024'
                 withCredentials([usernamePassword(credentialsId: '5ead5699-f937-4fbe-9ceb-3dab4fab56024', passwordVariable: 'DOCKER_PASSWORD', usernameVariable: 'DOCKER_USERNAME')]) {
                     bat "docker login -u ${DOCKER_USERNAME} -p ${DOCKER_PASSWORD}"
                     echo "Image Docker Hub Push."
@@ -52,30 +52,36 @@ pipeline {
 
         stage('4.5. Kubeconfig Setup') {
             steps {
-                // Minikube profile/update commands removed. KUBECONFIG environment variable is set in the next stage.
                 echo "Kubeconfig path defined and environment variables are set for next stage."
             }
         }
 
         stage('5. Deploy Observability & App') {
-            steps { // <--- CRUCIAL FIX: withEnv must be inside the steps block
+            steps { // withEnv must be inside steps block
                 // KUBECONFIG variable set for the Helm commands
                 withEnv(['KUBECONFIG=C:\\Users\\aksha\\.kube\\config']) {
-                    echo "--- Deploying Loki Stack (Prometheus, Loki, Grafana) ---"
-                    // 1. Loki stack repo add karein
-                    bat "helm repo add loki https://grafana.github.io/helm-charts --force-update"
                     
-                    // 2. Loki Stack (Prometheus, Grafana, Promtail/Fluentd) ko install karein
+                    // 1. GRAFANA (Visualization) ko alag deploy karein (10m timeout)
+                    echo "--- 1. Deploying Grafana (Visualization) ---"
+                    bat "helm repo add grafana https://grafana.github.io/helm-charts --force-update"
                     bat """
-                    helm upgrade --install loki-stack loki/loki-stack ^
-                    --set grafana.enabled=true ^
-                    --set prometheus.enabled=true ^
-                    --set promtail.enabled=true ^
-                    --wait --timeout 5m
+                    helm upgrade --install grafana grafana/grafana ^
+                    --set persistence.enabled=false ^
+                    --wait --timeout 10m 
                     """
                     
-                    echo "--- Deploying Custom Test Application ---\n"
-                    // 3. Custom App deploy karein
+                    // 2. LOKI (Logging Store) aur Promtail ko alag deploy karein (10m timeout)
+                    echo "--- 2. Deploying Loki (Logging Store) & Promtail ---"
+                    bat "helm repo add loki https://grafana.github.io/helm-charts --force-update" 
+                    bat """
+                    helm upgrade --install loki loki/loki ^
+                    --set persistence.enabled=false ^
+                    --set promtail.enabled=true ^
+                    --wait --timeout 10m
+                    """
+                    
+                    echo "--- 3. Deploying Custom Test Application ---\n"
+                    // 3. Custom App deploy karein (5m timeout)
                     bat """
                     helm upgrade --install test-app-release ${HELM_CHART_PATH} ^
                     --set image.repository=${DOCKER_IMAGE} ^

@@ -10,8 +10,6 @@ service:
   port: 80
   targetPort: 3000
 
-
-
 # NEW: Application Resource Definitions
 resources:
   limits:
@@ -21,7 +19,7 @@ resources:
     cpu: 100m
     memory: 128Mi
 
-# NEW: Liveness and Readiness Probes
+# NEW: Liveness and Readiness Probes (Delay increased to 30s to prevent timeout)
 probes:
   liveness:
     enabled: true
