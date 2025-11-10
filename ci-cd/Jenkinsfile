@@ -7,6 +7,7 @@ pipeline {
 
     parameters {
         credentials(name: 'DOCKER_CREDENTIALS', description: 'Select Docker Hub credentials (optional, auto-detected if empty)', required: false)
+        string(name: 'OBSERVATION_MINUTES', defaultValue: '30', description: 'Duration (in minutes) for which the environment should remain live before cleanup')
     }
 
     environment {
@@ -14,13 +15,18 @@ pipeline {
         HELM_CHART_PATH  = "helm/app-chart"
         NAMESPACE        = "observability"
         KUBECONFIG_PATH  = "C:\\ProgramData\\Jenkins\\.kube\\config"
+        SUMMARY_FILE     = "pipeline_summary.txt"
+        START_TIME       = ""
     }
 
     stages {
 
         stage('1. Code Checkout') {
             steps {
-                echo "✅ Code checkout done."
+                script {
+                    env.START_TIME = new Date().format("yyyy-MM-dd HH:mm:ss")
+                    echo "✅ Code checkout done at ${env.START_TIME}"
+                }
             }
         }
 
@@ -74,29 +80,30 @@ pipeline {
         stage('4. Kubernetes Cluster Setup & Check') {
             steps {
                 script {
-                    echo "🔍 Checking Minikube and kubectl status..."
-                    def kubeconfigExists = fileExists(env.KUBECONFIG_PATH)
+                    echo "🔍 Checking Minikube, kubectl, and kubeconfig..."
+
                     def kubectlExists = bat(returnStatus: true, script: 'where kubectl') == 0
                     def minikubeExists = bat(returnStatus: true, script: 'where minikube') == 0
+                    def kubeconfigExists = fileExists(env.KUBECONFIG_PATH)
 
                     if (!kubectlExists) error "❌ kubectl not found. Install kubectl and restart Jenkins."
                     if (!minikubeExists) error "❌ Minikube not found. Install Minikube and restart Jenkins."
                     if (!kubeconfigExists) error "❌ Jenkins kubeconfig missing. Copy Minikube config to ${env.KUBECONFIG_PATH}."
 
                     echo "🧠 Checking if Minikube is running..."
-                    def minikubeStatus = bat(returnStdout: true, script: "minikube status").trim()
+                    def minikubeStatus = bat(returnStdout: true, script: "minikube status || exit 0").trim()
 
                     if (!minikubeStatus.contains("Running")) {
-                        echo "⚙️ Minikube is not running — starting now..."
-                        bat "minikube start --driver=docker"
+                        echo "⚙️ Starting Minikube cluster..."
+                        bat "minikube start --driver=docker --force"
                     } else {
-                        echo "✅ Minikube is already running."
+                        echo "✅ Minikube already running."
                     }
 
-                    echo "🔗 Verifying cluster access..."
+                    echo "🔗 Validating cluster connectivity..."
                     def checkCluster = bat(returnStatus: true, script: "kubectl get nodes --kubeconfig=${env.KUBECONFIG_PATH}")
                     if (checkCluster != 0) {
-                        error "❌ Unable to connect to Minikube cluster. Check Docker or Kubernetes setup."
+                        error "❌ Unable to connect to Minikube cluster. Check Docker/Kubernetes setup."
                     } else {
                         echo "✅ Cluster connectivity confirmed."
                     }
@@ -104,10 +111,11 @@ pipeline {
             }
         }
 
-        stage('5. Deploy Observability Stack & App') {
+        stage('5. Deploy Observability Stack & Application') {
             steps {
                 withEnv(["KUBECONFIG=${env.KUBECONFIG_PATH}"]) {
-                    echo "--- Ensuring Namespace ---"
+                    echo "🚀 Deploying Observability Stack + Application..."
+
                     bat "kubectl create namespace ${NAMESPACE} --dry-run=client -o yaml | kubectl apply -f - --validate=false"
 
                     echo "--- Adding Helm Repositories ---"
@@ -157,37 +165,72 @@ pipeline {
                     --wait --timeout 5m
                     """
 
-                    echo "--- ✅ Deployment Complete. Listing Pods ---"
+                    echo "--- ✅ Deployment Complete ---"
                     bat "kubectl get pods -n ${NAMESPACE}"
 
-                    echo "🌍 Access Dashboards:"
-                    echo "  - Kibana: Run 'minikube service kibana -n ${NAMESPACE}'"
-                    echo "  - Grafana: Run 'minikube service grafana -n ${NAMESPACE}'"
-                    echo "  - App: Run 'minikube service test-app-release -n ${NAMESPACE}'"
+                    echo """
+🌍 Access Dashboards:
+  - Kibana:  minikube service kibana -n ${NAMESPACE}
+  - Grafana: minikube service grafana -n ${NAMESPACE}
+  - App:     minikube service test-app-release -n ${NAMESPACE}
+                    """
                 }
             }
         }
 
-        stage('6. Observation Window (30 Minutes)') {
+        stage('6. Observation Window (Configurable)') {
             steps {
-                echo "⏳ Environment live for 30 minutes. Access dashboards using Minikube service commands."
-                echo "📊 You can view logs, metrics, and dashboards in Kibana or Grafana."
-                echo "🕒 Automatic cleanup will start after 30 minutes..."
-                sleep(time: 30, unit: "MINUTES")
+                echo "⏳ Environment is live for ${params.OBSERVATION_MINUTES} minutes..."
+                echo "📊 Use 'minikube service <service-name> -n ${NAMESPACE}' to view dashboards."
+                sleep(time: params.OBSERVATION_MINUTES.toInteger(), unit: "MINUTES")
             }
         }
 
-        stage('7. Automatic Cleanup') {
+        stage('7. Full Cleanup (Namespace + Minikube Cluster)') {
             steps {
                 withEnv(["KUBECONFIG=${env.KUBECONFIG_PATH}"]) {
-                    echo "🧹 Starting cleanup of Helm releases and namespace..."
+                    echo "🧹 Cleaning up Helm releases, namespace, and Minikube cluster..."
+
                     bat "helm uninstall test-app-release -n ${NAMESPACE} || echo 'App not found'"
                     bat "helm uninstall kibana -n ${NAMESPACE} || echo 'Kibana not found'"
                     bat "helm uninstall fluentd -n ${NAMESPACE} || echo 'Fluentd not found'"
                     bat "helm uninstall elasticsearch -n ${NAMESPACE} || echo 'Elasticsearch not found'"
                     bat "helm uninstall grafana -n ${NAMESPACE} || echo 'Grafana not found'"
                     bat "kubectl delete namespace ${NAMESPACE} --ignore-not-found"
-                    echo "✅ Cleanup complete. Environment resources released."
+
+                    echo "🧨 Stopping and deleting Minikube cluster..."
+                    bat "minikube stop || echo 'Minikube not running'"
+                    bat "minikube delete --all || echo 'No clusters to delete'"
+
+                    echo "✅ Full cleanup complete."
+                }
+            }
+        }
+
+        stage('8. Generate Summary Report') {
+            steps {
+                script {
+                    def endTime = new Date().format("yyyy-MM-dd HH:mm:ss")
+
+                    def summary = """
+──────────────────────────────────────────────
+📘 PIPELINE EXECUTION SUMMARY
+──────────────────────────────────────────────
+👤 User: ${currentBuild.getBuildCauses()[0].userName ?: "Manual Trigger"}
+🏁 Build ID: ${env.BUILD_ID}
+🕒 Started: ${env.START_TIME}
+🕓 Ended:   ${endTime}
+📦 Docker Image: ${env.DOCKER_IMAGE}:${env.IMAGE_TAG}
+☁️  Namespace: ${env.NAMESPACE}
+🧭 Observation Time: ${params.OBSERVATION_MINUTES} minutes
+💥 Cleanup: Minikube cluster deleted successfully
+✅ Status: ${currentBuild.currentResult}
+──────────────────────────────────────────────
+"""
+
+                    writeFile file: env.SUMMARY_FILE, text: summary
+                    echo summary
+                    archiveArtifacts artifacts: env.SUMMARY_FILE, onlyIfSuccessful: true
                 }
             }
         }
