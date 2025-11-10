@@ -13,7 +13,7 @@ pipeline {
         IMAGE_TAG        = "${env.BUILD_ID}"
         HELM_CHART_PATH  = "helm/app-chart"
         NAMESPACE        = "observability"
-        KUBECONFIG_PATH  = "C:\\Users\\aksha\\.kube\\config"
+        KUBECONFIG_PATH  = "C:\\ProgramData\\Jenkins\\.kube\\config"
     }
 
     stages {
@@ -27,7 +27,6 @@ pipeline {
         stage('2. Build & Push Dynamic Docker Image') {
             steps {
                 script {
-                    // --- AUTO-DETECT DOCKER CREDENTIAL ---
                     def dockerCred = params.DOCKER_CREDENTIALS
                     if (!dockerCred) {
                         def creds = Jenkins.instance
@@ -42,7 +41,6 @@ pipeline {
                         }
                     }
 
-                    // --- USE THOSE CREDENTIALS ---
                     withCredentials([usernamePassword(
                         credentialsId: dockerCred,
                         usernameVariable: 'DOCKER_USER',
@@ -57,17 +55,6 @@ pipeline {
                         }
 
                         bat "echo %DOCKER_PASS% | docker login -u %DOCKER_USER% --password-stdin"
-
-                        echo "📦 Ensuring repository exists..."
-                        bat """
-                        curl -u %DOCKER_USER%:%DOCKER_PASS% ^
-                          -H "Content-Type: application/json" ^
-                          -X POST ^
-                          -d "{\\"name\\": \\"cloud-native-test-app\\", \\"is_private\\": false}" ^
-                          https://hub.docker.com/v2/repositories/%DOCKER_USER%/
-                        """
-
-                        echo "🚀 Pushing image to Docker Hub..."
                         bat "docker push ${dynamicImage}:${IMAGE_TAG}"
 
                         env.DOCKER_IMAGE = dynamicImage
@@ -84,10 +71,40 @@ pipeline {
             }
         }
 
-        stage('4. Deploy Observability & App (ELK Stack)') {
-            when {
-                expression { fileExists(env.KUBECONFIG_PATH) && bat(returnStatus: true, script: 'where kubectl') == 0 }
+        stage('4. Kubernetes Cluster Setup & Check') {
+            steps {
+                script {
+                    echo "🔍 Checking Minikube and kubectl status..."
+                    def kubeconfigExists = fileExists(env.KUBECONFIG_PATH)
+                    def kubectlExists = bat(returnStatus: true, script: 'where kubectl') == 0
+                    def minikubeExists = bat(returnStatus: true, script: 'where minikube') == 0
+
+                    if (!kubectlExists) error "❌ kubectl not found. Install kubectl and restart Jenkins."
+                    if (!minikubeExists) error "❌ Minikube not found. Install Minikube and restart Jenkins."
+                    if (!kubeconfigExists) error "❌ Jenkins kubeconfig missing. Copy Minikube config to ${env.KUBECONFIG_PATH}."
+
+                    echo "🧠 Checking if Minikube is running..."
+                    def minikubeStatus = bat(returnStdout: true, script: "minikube status").trim()
+
+                    if (!minikubeStatus.contains("Running")) {
+                        echo "⚙️ Minikube is not running — starting now..."
+                        bat "minikube start --driver=docker"
+                    } else {
+                        echo "✅ Minikube is already running."
+                    }
+
+                    echo "🔗 Verifying cluster access..."
+                    def checkCluster = bat(returnStatus: true, script: "kubectl get nodes --kubeconfig=${env.KUBECONFIG_PATH}")
+                    if (checkCluster != 0) {
+                        error "❌ Unable to connect to Minikube cluster. Check Docker or Kubernetes setup."
+                    } else {
+                        echo "✅ Cluster connectivity confirmed."
+                    }
+                }
             }
+        }
+
+        stage('5. Deploy Observability Stack & App') {
             steps {
                 withEnv(["KUBECONFIG=${env.KUBECONFIG_PATH}"]) {
                     echo "--- Ensuring Namespace ---"
@@ -123,7 +140,7 @@ pipeline {
                     --wait --timeout 5m
                     """
 
-                    echo "--- Deploying Grafana (optional metrics) ---"
+                    echo "--- Deploying Grafana ---"
                     bat """
                     helm upgrade --install grafana grafana/grafana ^
                     -f helm/observability/grafana-values.yaml ^
@@ -140,13 +157,37 @@ pipeline {
                     --wait --timeout 5m
                     """
 
-                    echo "--- ✅ Deployment Complete. Checking Pods ---"
+                    echo "--- ✅ Deployment Complete. Listing Pods ---"
                     bat "kubectl get pods -n ${NAMESPACE}"
+
+                    echo "🌍 Access Dashboards:"
+                    echo "  - Kibana: Run 'minikube service kibana -n ${NAMESPACE}'"
+                    echo "  - Grafana: Run 'minikube service grafana -n ${NAMESPACE}'"
+                    echo "  - App: Run 'minikube service test-app-release -n ${NAMESPACE}'"
                 }
             }
-            post {
-                unsuccessful {
-                    echo "⚠️ Deployment skipped or failed — cluster not configured or kubectl missing."
+        }
+
+        stage('6. Observation Window (30 Minutes)') {
+            steps {
+                echo "⏳ Environment live for 30 minutes. Access dashboards using Minikube service commands."
+                echo "📊 You can view logs, metrics, and dashboards in Kibana or Grafana."
+                echo "🕒 Automatic cleanup will start after 30 minutes..."
+                sleep(time: 30, unit: "MINUTES")
+            }
+        }
+
+        stage('7. Automatic Cleanup') {
+            steps {
+                withEnv(["KUBECONFIG=${env.KUBECONFIG_PATH}"]) {
+                    echo "🧹 Starting cleanup of Helm releases and namespace..."
+                    bat "helm uninstall test-app-release -n ${NAMESPACE} || echo 'App not found'"
+                    bat "helm uninstall kibana -n ${NAMESPACE} || echo 'Kibana not found'"
+                    bat "helm uninstall fluentd -n ${NAMESPACE} || echo 'Fluentd not found'"
+                    bat "helm uninstall elasticsearch -n ${NAMESPACE} || echo 'Elasticsearch not found'"
+                    bat "helm uninstall grafana -n ${NAMESPACE} || echo 'Grafana not found'"
+                    bat "kubectl delete namespace ${NAMESPACE} --ignore-not-found"
+                    echo "✅ Cleanup complete. Environment resources released."
                 }
             }
         }
