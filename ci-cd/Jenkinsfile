@@ -1,24 +1,27 @@
-// Docker Username set kar diya gaya hai: akkicasm06
-// Final fix applied for Windows 'bat' command and UUID credentials
 pipeline {
     agent any
+
+    parameters {
+        credentials(name: 'DOCKER_CREDENTIALS', description: 'Select Docker Hub credentials to use')
+    }
+
     environment {
-        DOCKER_IMAGE = "akkicasm06/cloud-native-test-app"
-        IMAGE_TAG = "${env.BUILD_ID}"
-        HELM_CHART_PATH = "helm/app-chart"
-        NAMESPACE = "observability"
+        DOCKER_IMAGE     = "akkicasm06/cloud-native-test-app"
+        IMAGE_TAG        = "${env.BUILD_ID}"
+        HELM_CHART_PATH  = "helm/app-chart"
+        NAMESPACE        = "observability"
     }
 
     stages {
-        stage('1. Code Checkout') { 
-            steps { 
-                echo "Code checkout done." 
-            } 
+        stage('1. Code Checkout') {
+            steps {
+                echo "Code checkout done."
+            }
         }
 
         stage('2. Build Image') {
             steps {
-                dir('test-app') { 
+                dir('test-app') {
                     bat "docker build -t ${DOCKER_IMAGE}:${IMAGE_TAG} ."
                 }
             }
@@ -26,17 +29,17 @@ pipeline {
 
         stage('3. Push Image to Docker Hub') {
             steps {
-                withCredentials([usernamePassword(credentialsId: '5ead5699-f937-4fbe-9ceb-3dab4fab56024', passwordVariable: 'DOCKER_PASSWORD', usernameVariable: 'DOCKER_USERNAME')]) {
-                    bat "docker login -u ${DOCKER_USERNAME} -p ${DOCKER_PASSWORD}"
-                    echo "Pushing image to Docker Hub..."
-                    bat "docker push ${DOCKER_IMAGE}:${IMAGE_TAG}"
+                script {
+                    // Credential ID comes from user/environment — not hardcoded
+                    withCredentials([usernamePassword(
+                        credentialsId: params.DOCKER_CREDENTIALS,
+                        usernameVariable: 'DOCKER_USER',
+                        passwordVariable: 'DOCKER_PASS'
+                    )]) {
+                        bat "docker login -u %DOCKER_USER% -p %DOCKER_PASS%"
+                        bat "docker push ${DOCKER_IMAGE}:${IMAGE_TAG}"
+                    }
                 }
-            }
-        }
-
-        stage('3.5. Quality Assurance (Testing & Scanning)') {
-            steps {
-                echo "--- TO BE IMPLEMENTED: App Testing & Security Scan ---"
             }
         }
 
@@ -48,61 +51,16 @@ pipeline {
             }
         }
 
-        stage('4.5. Kubeconfig Setup') {
-            steps {
-                echo "Kubeconfig path defined for Helm commands."
-            }
-        }
-
         stage('5. Deploy Observability & App') {
             steps {
                 withEnv(['KUBECONFIG=C:\\Users\\aksha\\.kube\\config']) {
-
-                    // Create namespace
                     bat "kubectl create namespace ${NAMESPACE} --dry-run=client -o yaml | kubectl apply -f -"
 
-                    echo "--- Adding Helm Repositories ---"
                     bat "helm repo add grafana https://grafana.github.io/helm-charts --force-update"
                     bat "helm repo add prometheus-community https://prometheus-community.github.io/helm-charts --force-update"
                     bat "helm repo update"
 
-                    echo "--- 1. Deploying Loki (SingleBinary, Local Storage) ---"
-                    bat """
-                    helm upgrade --install loki grafana/loki ^
-                    -f helm/observability/loki-values.yaml ^
-                    -n ${NAMESPACE} ^
-                    --set loki.useTestSchema=true ^
-                    --set read.replicas=0 ^
-                    --set write.replicas=0 ^
-                    --set backend.replicas=0 ^
-                    --wait --timeout 10m
-                    """
-
-                    echo "--- 2. Deploying Promtail (Log Collector) ---"
-                    bat """
-                    helm upgrade --install promtail grafana/promtail ^
-                    -f helm/observability/promtail-values.yaml ^
-                    -n ${NAMESPACE} ^
-                    --wait --timeout 5m
-                    """
-
-                    echo "--- 3. Deploying Grafana (Dashboard) ---"
-                    bat """
-                    helm upgrade --install grafana grafana/grafana ^
-                    -f helm/observability/grafana-values.yaml ^
-                    -n ${NAMESPACE} ^
-                    --wait --timeout 5m
-                    """
-
-                    echo "--- 4. Deploying Custom Application ---"
-                    bat """
-                    helm upgrade --install test-app-release ${HELM_CHART_PATH} ^
-                    --set image.repository=${DOCKER_IMAGE} ^
-                    --set image.tag=${IMAGE_TAG} ^
-                    --wait --timeout 5m
-                    """
-
-                    echo "--- ✅ Deployment Complete. Checking Pods ---"
+                    bat "helm upgrade --install test-app-release ${HELM_CHART_PATH} --set image.repository=${DOCKER_IMAGE} --set image.tag=${IMAGE_TAG} -n ${NAMESPACE} --wait --timeout 5m"
                     bat "kubectl get pods -n ${NAMESPACE}"
                 }
             }
