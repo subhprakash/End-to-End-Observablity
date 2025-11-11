@@ -33,9 +33,8 @@ pipeline {
         stage('2. Build & Push Docker Image') {
             steps {
                 script {
-                    // Directly use credentials set in Jenkins (no getInstance)
                     withCredentials([usernamePassword(
-                        credentialsId: 'docker-hub-creds', // replace with your actual ID in Jenkins
+                        credentialsId: 'docker-hub-creds', // Replace with your Jenkins credential ID
                         usernameVariable: 'DOCKER_USER',
                         passwordVariable: 'DOCKER_PASS'
                     )]) {
@@ -63,7 +62,6 @@ pipeline {
             }
         }
 
-
         stage('3. Helm Lint') {
             steps {
                 dir('helm/app-chart') {
@@ -72,42 +70,38 @@ pipeline {
             }
         }
 
+        // ✅ Updated Stage 4 — Uses existing Minikube cluster instead of starting a new one
         stage('4. Kubernetes Cluster Setup & Check') {
             steps {
                 script {
-                    echo "🔍 Checking Minikube, kubectl, and kubeconfig..."
+                    echo "🔍 Checking existing Minikube and kubeconfig..."
 
                     def kubectlExists = bat(returnStatus: true, script: 'where kubectl') == 0
                     def minikubeExists = bat(returnStatus: true, script: 'where minikube') == 0
-
                     if (!kubectlExists) error "❌ kubectl not found. Install kubectl and restart Jenkins."
                     if (!minikubeExists) error "❌ Minikube not found. Install Minikube and restart Jenkins."
 
-                    echo "🧠 Checking Minikube status..."
-                    def status = bat(returnStdout: true, script: "minikube status || exit 0").trim()
-
-                    if (status.contains("does not exist") || !status.contains("Running")) {
-                        echo "⚠️ Detected broken Minikube profile — cleaning up..."
-                        bat "minikube delete --all --purge || echo 'Nothing to delete'"
-                    }
-
-                    echo "🚀 Starting fresh Minikube cluster..."
-                    def startCode = bat(returnStatus: true, script: "minikube start --driver=docker --force --cpus=3 --memory=6000 --kubernetes-version=v1.34.0")
-                    if (startCode != 0) error "❌ Minikube failed to start."
-
-                    def userKubePath = "${env.USERPROFILE}\\.kube\\config"
+                    def userKubePath = "C:\\Users\\aksha\\.kube\\config"
                     def jenkinsKubeDir = "C:\\ProgramData\\Jenkins\\.kube"
                     def jenkinsKubePath = "${jenkinsKubeDir}\\config"
 
                     bat """
                     if not exist "${jenkinsKubeDir}" mkdir "${jenkinsKubeDir}"
-                    if exist "${userKubePath}" copy /Y "${userKubePath}" "${jenkinsKubePath}"
+                    if exist "${userKubePath}" (
+                        copy /Y "${userKubePath}" "${jenkinsKubePath}"
+                        echo ✅ Copied kubeconfig from user profile to Jenkins.
+                    ) else (
+                        echo ⚠️ User kubeconfig not found at ${userKubePath}
+                    )
                     """
 
                     echo "🔗 Verifying cluster connectivity..."
                     def checkCluster = bat(returnStatus: true, script: "kubectl get nodes --kubeconfig=${jenkinsKubePath}")
-                    if (checkCluster != 0) error "❌ Cluster unreachable after startup."
-                    else echo "✅ Cluster connectivity confirmed."
+                    if (checkCluster != 0) {
+                        error "❌ Cluster unreachable. Please ensure Minikube is running under your user (run 'minikube status')."
+                    } else {
+                        echo "✅ Cluster connectivity confirmed and ready."
+                    }
                 }
             }
         }
@@ -182,16 +176,15 @@ pipeline {
         stage('7. Full Cleanup') {
             steps {
                 withEnv(["KUBECONFIG=${env.KUBECONFIG_PATH}"]) {
-                    echo "🧹 Cleaning up cluster and resources..."
+                    echo "🧹 Cleaning up Helm releases and namespace (skipping Minikube deletion)..."
+
                     bat "helm uninstall test-app-release -n ${NAMESPACE} || echo 'App not found'"
                     bat "helm uninstall kibana -n ${NAMESPACE} || echo 'Kibana not found'"
                     bat "helm uninstall fluent-bit -n ${NAMESPACE} || echo 'Fluent Bit not found'"
                     bat "helm uninstall elasticsearch -n ${NAMESPACE} || echo 'Elasticsearch not found'"
                     bat "helm uninstall grafana -n ${NAMESPACE} || echo 'Grafana not found'"
                     bat "kubectl delete namespace ${NAMESPACE} --ignore-not-found"
-                    bat "minikube stop || echo 'Minikube not running'"
-                    bat "minikube delete --all --purge || echo 'No clusters to delete'"
-                    echo "✅ Cleanup complete."
+                    echo "✅ Cleanup complete (Minikube left running)."
                 }
             }
         }
@@ -211,7 +204,6 @@ pipeline {
 📦 Docker Image: ${env.DOCKER_IMAGE}:${env.IMAGE_TAG}
 ☁️ Namespace: ${env.NAMESPACE}
 🧭 Observation Time: ${params.OBSERVATION_MINUTES} minutes
-💥 Cleanup: Minikube cluster deleted successfully
 ✅ Status: ${currentBuild.currentResult}
 ──────────────────────────────────────────────
 """
