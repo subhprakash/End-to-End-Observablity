@@ -1,12 +1,9 @@
 import jenkins.model.*
-import com.cloudbees.plugins.credentials.*
-import com.cloudbees.plugins.credentials.domains.*
 
 pipeline {
     agent any
 
     parameters {
-        credentials(name: 'DOCKER_CREDENTIALS', description: 'Select Docker Hub credentials (optional, auto-detected if empty)', required: false)
         string(name: 'OBSERVATION_MINUTES', defaultValue: '30', description: 'How long (in minutes) the environment should stay live before auto-cleanup')
     }
 
@@ -17,6 +14,7 @@ pipeline {
         KUBECONFIG_PATH  = "C:\\ProgramData\\Jenkins\\.kube\\config"
         SUMMARY_FILE     = "pipeline_summary.txt"
         START_TIME       = ""
+        DOCKER_CRED_ID   = "95cea407-46f7-4170-9d0c-5dbea6a8883a"  // your credential ID
     }
 
     stages {
@@ -30,40 +28,29 @@ pipeline {
             }
         }
 
-        stage('2. Build & Push Dynamic Docker Image') {
+        stage('2. Build & Push Docker Image') {
             steps {
                 script {
-                    def dockerCred = params.DOCKER_CREDENTIALS
-                    if (!dockerCred) {
-                        def creds = Jenkins.instance
-                            .getExtensionList('com.cloudbees.plugins.credentials.SystemCredentialsProvider')[0]
-                            .getCredentials()
-                        def match = creds.find { it.description?.toLowerCase()?.contains('docker') || it.id?.toLowerCase()?.contains('docker') }
-                        dockerCred = match?.id
-                        if (!dockerCred) {
-                            error "❌ No Docker credentials found in Jenkins. Please add or select one."
-                        } else {
-                            echo "✅ Auto-detected Docker credentials: ${dockerCred}"
-                        }
-                    }
-
                     withCredentials([usernamePassword(
-                        credentialsId: dockerCred,
+                        credentialsId: env.DOCKER_CRED_ID,
                         usernameVariable: 'DOCKER_USER',
                         passwordVariable: 'DOCKER_PASS'
                     )]) {
-
                         def dynamicImage = "${DOCKER_USER}/cloud-native-test-app"
-                        echo "🧩 Using dynamic image repository: ${dynamicImage}"
+                        echo "🧩 Using Docker repository: ${dynamicImage}"
 
                         dir('test-app') {
                             bat "docker build -t ${dynamicImage}:${IMAGE_TAG} ."
                         }
 
+                        echo "🔐 Logging into Docker Hub..."
                         bat "echo %DOCKER_PASS% | docker login -u %DOCKER_USER% --password-stdin"
+
+                        echo "🚀 Pushing image to Docker Hub..."
                         bat "docker push ${dynamicImage}:${IMAGE_TAG}"
 
                         env.DOCKER_IMAGE = dynamicImage
+                        echo "✅ Docker image pushed successfully!"
                     }
                 }
             }
@@ -80,7 +67,7 @@ pipeline {
         stage('4. Kubernetes Cluster Setup & Check') {
             steps {
                 script {
-                    echo "🔍 Checking Minikube, kubectl, and kubeconfig..."
+                    echo "🔍 Checking Minikube and kubectl..."
 
                     def kubectlExists = bat(returnStatus: true, script: 'where kubectl') == 0
                     def minikubeExists = bat(returnStatus: true, script: 'where minikube') == 0
@@ -88,17 +75,12 @@ pipeline {
                     if (!kubectlExists) error "❌ kubectl not found. Install kubectl and restart Jenkins."
                     if (!minikubeExists) error "❌ Minikube not found. Install Minikube and restart Jenkins."
 
-                    echo "🧠 Checking Minikube status..."
+                    echo "🚀 Ensuring Minikube is running..."
                     def status = bat(returnStdout: true, script: "minikube status || exit 0").trim()
 
-                    if (status.contains("does not exist") || !status.contains("Running")) {
-                        echo "⚠️ Detected broken Minikube profile — cleaning it up safely..."
-                        bat "minikube delete --all --purge || echo 'Nothing to delete'"
+                    if (!status.contains("Running")) {
+                        bat "minikube start --driver=docker --force --cpus=4 --memory=11000 --kubernetes-version=v1.34.0"
                     }
-
-                    echo "🚀 Starting a fresh Minikube cluster..."
-                    def startCode = bat(returnStatus: true, script: "minikube start --driver=docker --force --cpus=4 --memory=11000 --kubernetes-version=v1.34.0")
-                    if (startCode != 0) error "❌ Minikube failed to start."
 
                     def userKubePath = "${env.USERPROFILE}\\.kube\\config"
                     def jenkinsKubeDir = "C:\\ProgramData\\Jenkins\\.kube"
@@ -106,10 +88,9 @@ pipeline {
 
                     bat """
                     if not exist "${jenkinsKubeDir}" mkdir "${jenkinsKubeDir}"
-                    if exist "${userKubePath}" copy /Y "${userKubePath}" "${jenkinsKubePath}"
+                    copy /Y "${userKubePath}" "${jenkinsKubePath}" >nul 2>&1
                     """
 
-                    echo "🔗 Verifying cluster connectivity..."
                     def checkCluster = bat(returnStatus: true, script: "kubectl get nodes --kubeconfig=${jenkinsKubePath}")
                     if (checkCluster != 0) error "❌ Cluster unreachable after startup."
                     else echo "✅ Cluster connectivity confirmed."
@@ -117,7 +98,7 @@ pipeline {
             }
         }
 
-        stage('5. Deploy Observability Stack & Application') {
+        stage('5. Deploy Observability Stack & App') {
             steps {
                 withEnv(["KUBECONFIG=${env.KUBECONFIG_PATH}"]) {
                     echo "🚀 Deploying Observability Stack + Application..."
@@ -138,7 +119,7 @@ pipeline {
                     --wait --timeout 10m
                     """
 
-                    echo "--- Deploying Fluent Bit (instead of Fluentd) ---"
+                    echo "--- Deploying Fluent Bit ---"
                     bat """
                     helm upgrade --install fluent-bit fluent/fluent-bit ^
                     -f helm/observability/fluentbit-values.yaml ^
@@ -162,7 +143,7 @@ pipeline {
                     --wait --timeout 5m
                     """
 
-                    echo "--- Deploying Application ---"
+                    echo "--- Deploying Test App ---"
                     bat """
                     helm upgrade --install test-app-release ${HELM_CHART_PATH} ^
                     --set image.repository=${env.DOCKER_IMAGE} ^
@@ -171,30 +152,23 @@ pipeline {
                     --wait --timeout 5m
                     """
 
-                    echo "--- ✅ Deployment Complete ---"
+                    echo "✅ Deployment Complete!"
                     bat "kubectl get pods -n ${NAMESPACE}"
-
-                    echo """
-🌍 Access Dashboards:
-  - Kibana:  minikube service kibana -n ${NAMESPACE}
-  - Grafana: minikube service grafana -n ${NAMESPACE}
-  - App:     minikube service test-app-release -n ${NAMESPACE}
-                    """
                 }
             }
         }
 
-        stage('6. Observation Window (Configurable)') {
+        stage('6. Observation Window') {
             steps {
-                echo "⏳ Environment will stay live for ${params.OBSERVATION_MINUTES} minutes..."
+                echo "⏳ Environment live for ${params.OBSERVATION_MINUTES} minutes..."
                 sleep(time: params.OBSERVATION_MINUTES.toInteger(), unit: "MINUTES")
             }
         }
 
-        stage('7. Full Cleanup (Namespace + Minikube Cluster)') {
+        stage('7. Full Cleanup') {
             steps {
                 withEnv(["KUBECONFIG=${env.KUBECONFIG_PATH}"]) {
-                    echo "🧹 Cleaning up Helm releases, namespace, and Minikube cluster..."
+                    echo "🧹 Cleaning up Helm releases and Minikube cluster..."
 
                     bat "helm uninstall test-app-release -n ${NAMESPACE} || echo 'App not found'"
                     bat "helm uninstall kibana -n ${NAMESPACE} || echo 'Kibana not found'"
@@ -203,7 +177,6 @@ pipeline {
                     bat "helm uninstall grafana -n ${NAMESPACE} || echo 'Grafana not found'"
                     bat "kubectl delete namespace ${NAMESPACE} --ignore-not-found"
 
-                    echo "🧨 Stopping and deleting Minikube cluster..."
                     bat "minikube stop || echo 'Minikube not running'"
                     bat "minikube delete --all --purge || echo 'No clusters to delete'"
 
@@ -216,7 +189,6 @@ pipeline {
             steps {
                 script {
                     def endTime = new Date().format("yyyy-MM-dd HH:mm:ss")
-
                     def summary = """
 ──────────────────────────────────────────────
 📘 PIPELINE EXECUTION SUMMARY
@@ -227,12 +199,11 @@ pipeline {
 🕓 Ended:   ${endTime}
 📦 Docker Image: ${env.DOCKER_IMAGE}:${env.IMAGE_TAG}
 ☁️ Namespace: ${env.NAMESPACE}
-🧭 Observation Time: ${params.OBSERVATION_MINUTES} minutes
-💥 Cleanup: Minikube cluster deleted successfully
+🧭 Observation: ${params.OBSERVATION_MINUTES} mins
+💥 Cleanup: Complete
 ✅ Status: ${currentBuild.currentResult}
 ──────────────────────────────────────────────
 """
-
                     writeFile file: env.SUMMARY_FILE, text: summary
                     echo summary
                     archiveArtifacts artifacts: env.SUMMARY_FILE, onlyIfSuccessful: true
