@@ -92,7 +92,7 @@ pipeline {
                     }
 
                     echo "🚀 Starting fresh Minikube cluster..."
-                    def startCode = bat(returnStatus: true, script: "minikube start --driver=docker --force --cpus=4 --memory=11000 --kubernetes-version=v1.34.0")
+                    def startCode = bat(returnStatus: true, script: "minikube start --driver=docker --force --cpus=3 --memory=6000 --kubernetes-version=v1.34.0")
                     if (startCode != 0) error "❌ Minikube failed to start."
 
                     def userKubePath = "${env.USERPROFILE}\\.kube\\config"
