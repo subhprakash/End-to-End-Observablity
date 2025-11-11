@@ -1,35 +1,43 @@
-version: '3.9'
+
 
 services:
-  # ------------- YOUR APPLICATION -------------
+  # ---------------- YOUR NODE.JS APPLICATION ----------------
   app:
     image: akkicasm06/cloud-native-test-app:latest
     container_name: cloud-app
     ports:
-      - "8085:8080"
+      - "8085:3000"   # Your app exposes port 3000 inside container
     depends_on:
       - elasticsearch
     environment:
       - NODE_ENV=production
     logging:
       driver: "json-file"
+    restart: always
 
-  # ------------- ELASTICSEARCH -------------
+  # ---------------- ELASTICSEARCH ----------------
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.15.0
     container_name: elasticsearch
     environment:
       - discovery.type=single-node
-      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+      - xpack.security.enabled=false               # Disable HTTPS + auth for dev
+      - xpack.security.http.ssl.enabled=false
+      - ES_JAVA_OPTS=-Xms1g -Xmx1g
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
     ports:
       - "9200:9200"
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:9200 || exit 1"]
-      interval: 20s
+      test: ["CMD-SHELL", "curl -fs http://localhost:9200/_cluster/health || exit 1"]
+      interval: 30s
       timeout: 10s
-      retries: 5
+      retries: 10
+    restart: always
 
-  # ------------- KIBANA -------------
+  # ---------------- KIBANA ----------------
   kibana:
     image: docker.elastic.co/kibana/kibana:8.15.0
     container_name: kibana
@@ -40,8 +48,9 @@ services:
         condition: service_healthy
     environment:
       - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    restart: always
 
-  # ------------- FLUENT BIT -------------
+  # ---------------- FLUENT BIT ----------------
   fluent-bit:
     image: cr.fluentbit.io/fluent/fluent-bit:3.1.4
     container_name: fluent-bit
@@ -49,10 +58,12 @@ services:
       - ./fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
     depends_on:
-      - elasticsearch
+      elasticsearch:
+        condition: service_healthy
     command: ["fluent-bit", "-c", "/fluent-bit/etc/fluent-bit.conf"]
+    restart: always
 
-  # ------------- GRAFANA -------------
+  # ---------------- GRAFANA ----------------
   grafana:
     image: grafana/grafana:latest
     container_name: grafana
@@ -62,5 +73,6 @@ services:
       - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=admin
     depends_on:
-      - elasticsearch
+      elasticsearch:
+        condition: service_healthy
     restart: always
