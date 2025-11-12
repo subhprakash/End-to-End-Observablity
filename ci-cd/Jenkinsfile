@@ -1,8 +1,12 @@
 pipeline {
     agent any
 
+    parameters {
+        booleanParam(name: 'CLEANUP', defaultValue: false, description: 'Stop and remove containers after build')
+    }
+
     environment {
-        IMAGE_NAME = "akkicasm06/cloud-native-test-app"
+        IMAGE_NAME   = "akkicasm06/cloud-native-test-app"
         COMPOSE_PATH = "compose"
     }
 
@@ -10,30 +14,32 @@ pipeline {
         stage('1. Checkout') {
             steps {
                 checkout scm
-                echo "✅ Code checked out from repo"
+                echo "✅ Code checked out from repository"
             }
         }
 
-        stage('2. Build App Image') {
+        stage('2. Build Application Image') {
             steps {
                 dir('test-app') {
+                    echo "🧩 Building Docker image for the app..."
                     bat "docker build -t ${IMAGE_NAME}:latest ."
                 }
-                echo "🧩 App Docker image built successfully"
             }
         }
 
         stage('3. Start Observability Stack') {
             steps {
                 dir("${COMPOSE_PATH}") {
-                    echo "🚀 Launching stack via Docker Compose..."
+                    echo "🚀 Launching Observability Stack via Docker Compose..."
+                    // Stop any old stack cleanly
                     bat "docker compose down || echo 'No previous stack found'"
+                    // Bring everything up
                     bat "docker compose up -d --build"
                 }
             }
         }
 
-        stage('4. Verify Containers') {
+        stage('4. Verify Running Containers') {
             steps {
                 script {
                     echo "🔍 Checking running containers..."
@@ -42,13 +48,31 @@ pipeline {
             }
         }
 
-        stage('5. Optional Cleanup') {
+        stage('5. Open Application & Dashboards') {
+            steps {
+                script {
+                    echo "🌐 Opening application and dashboards..."
+                    bat """
+                    start http://localhost:8085
+                    start http://localhost:3000
+                    start http://localhost:5601
+                    """
+                    echo """
+                    ✅ Application:  http://localhost:8085
+                    📊 Grafana:      http://localhost:3000 (admin / admin)
+                    🧩 Kibana:       http://localhost:5601
+                    """
+                }
+            }
+        }
+
+        stage('6. Optional Cleanup') {
             when {
                 expression { return params.CLEANUP == true }
             }
             steps {
                 dir("${COMPOSE_PATH}") {
-                    echo "🧹 Cleaning up containers..."
+                    echo "🧹 Cleaning up stack..."
                     bat "docker compose down -v"
                 }
             }
@@ -57,7 +81,7 @@ pipeline {
 
     post {
         always {
-            echo "🏁 Pipeline finished."
+            echo "🏁 Pipeline finished successfully (or skipped cleanup)."
         }
     }
 }
