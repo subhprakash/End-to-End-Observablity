@@ -2,71 +2,55 @@ pipeline {
     agent any
 
     environment {
-        DOCKER_IMAGE = "akkicasm06/cloud-native-test-app"
-        IMAGE_TAG = "${env.BUILD_NUMBER}"
+        IMAGE_NAME = "akkicasm06/cloud-native-test-app"
         COMPOSE_PATH = "compose"
     }
 
     stages {
         stage('1. Checkout') {
             steps {
-                echo "✅ Checking out code"
+                checkout scm
+                echo "✅ Code checked out from repo"
             }
         }
 
-        stage('2. Build Docker Image') {
+        stage('2. Build App Image') {
             steps {
                 dir('test-app') {
-                    bat "docker build -t ${DOCKER_IMAGE}:${IMAGE_TAG} ."
+                    bat "docker build -t ${IMAGE_NAME}:latest ."
                 }
+                echo "🧩 App Docker image built successfully"
             }
         }
 
-        stage('3. Push to Docker Hub') {
-            steps {
-                withCredentials([usernamePassword(credentialsId: 'docker-hub-creds', 
-                                                 usernameVariable: 'DOCKER_USER',
-                                                 passwordVariable: 'DOCKER_PASS')]) {
-                    echo "🔐 Logging into Docker Hub..."
-                    bat "echo %DOCKER_PASS% | docker login -u %DOCKER_USER% --password-stdin"
-                    bat "docker push ${DOCKER_IMAGE}:${IMAGE_TAG}"
-                    bat "docker tag ${DOCKER_IMAGE}:${IMAGE_TAG} ${DOCKER_IMAGE}:latest"
-                    bat "docker push ${DOCKER_IMAGE}:latest"
-                }
-            }
-        }
-
-        stage('4. Deploy via Docker Compose') {
+        stage('3. Start Observability Stack') {
             steps {
                 dir("${COMPOSE_PATH}") {
-                    echo "🚀 Starting Observability Stack + App..."
-                    bat "docker compose down || echo nothing_to_down"
-                    bat "docker compose up -d"
+                    echo "🚀 Launching stack via Docker Compose..."
+                    bat "docker compose down || echo 'No previous stack found'"
+                    bat "docker compose up -d --build"
                 }
             }
         }
 
-        stage('5. Verify Containers') {
+        stage('4. Verify Containers') {
             steps {
-                bat "docker ps"
-                echo """
-✅ Deployment complete.
-
-Access:
-- App:        http://localhost:8080
-- Kibana:     http://localhost:5601
-- Grafana:    http://localhost:3000
-"""
+                script {
+                    echo "🔍 Checking running containers..."
+                    bat 'docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"'
+                }
             }
         }
 
-        stage('6. Optional Cleanup') {
+        stage('5. Optional Cleanup') {
+            when {
+                expression { return params.CLEANUP == true }
+            }
             steps {
-                input message: 'Do you want to stop all containers?', ok: 'Yes, Clean Up'
                 dir("${COMPOSE_PATH}") {
-                    bat "docker compose down"
+                    echo "🧹 Cleaning up containers..."
+                    bat "docker compose down -v"
                 }
-                echo "🧹 Containers stopped and cleaned up."
             }
         }
     }
