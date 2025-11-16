@@ -1,6 +1,6 @@
 const express = require('express');
 const client = require('prom-client');
-const crypto = require('crypto'); // For generating a unique trace ID
+const crypto = require = require('crypto'); // For generating a unique trace ID
 const app = express();
 const PORT = 3000;
 
@@ -15,6 +15,13 @@ const requestCount = new client.Counter({
     labelNames: ['route', 'method', 'status_code']
 });
 
+// ⭐ NEW METRIC: Counter for specific business actions (Add to Cart)
+const cartActionCount = new client.Counter({
+    name: 'ecomm_cart_actions_total',
+    help: 'Total number of items added to cart',
+    labelNames: ['product_sku']
+});
+
 // Histogram for response time by route (with realistic buckets)
 const responseTime = new client.Histogram({
     name: 'app_response_time_seconds',
@@ -24,6 +31,7 @@ const responseTime = new client.Histogram({
 });
 
 register.registerMetric(requestCount);
+register.registerMetric(cartActionCount); // Register the new metric
 register.registerMetric(responseTime);
 
 // ---------------- Middleware & Helper Functions ----------------
@@ -74,9 +82,10 @@ function simulateWork(minMs, maxMs) {
 
 // ---------------- Routes ----------------
 
+// Home Page Route with Video Background
 app.get('/', async (req, res) => {
     log('INFO', 'E-commerce Home/Product page accessed and simulating backend operations.', req);
-    await simulateWork(100, 300); // Simulate product data fetching, recommendations, etc.
+    await simulateWork(100, 300); // Simulate product data fetching
 
     res.send(`
         <html>
@@ -87,17 +96,35 @@ app.get('/', async (req, res) => {
                 body { 
                     font-family: 'Poppins', sans-serif; 
                     margin: 0; 
-                    background-color: #f0f2f5; 
                     color: #333; 
                     line-height: 1.6; 
+                    overflow-x: hidden; /* Prevent horizontal scroll */
                 }
+                
+                /* Video Background Styling */
+                #video-background {
+                    position: fixed;
+                    right: 0;
+                    bottom: 0;
+                    min-width: 100%; 
+                    min-height: 100%;
+                    width: auto; 
+                    height: auto;
+                    z-index: -100; /* Send to background */
+                    background-size: cover;
+                    background-color: #f0f2f5; /* Fallback color */
+                    filter: brightness(0.7); /* Darken video for better text readability */
+                }
+
                 .navbar {
-                    background-color: #ffffff;
+                    background-color: rgba(255, 255, 255, 0.9); /* Slightly transparent */
                     padding: 15px 30px;
                     box-shadow: 0 2px 4px rgba(0,0,0,0.05);
                     display: flex;
                     justify-content: space-between;
                     align-items: center;
+                    position: relative; /* Above video */
+                    z-index: 10;
                 }
                 .navbar-brand {
                     font-weight: 600;
@@ -119,10 +146,12 @@ app.get('/', async (req, res) => {
                     max-width: 960px; 
                     margin: 40px auto; 
                     padding: 20px; 
-                    background-color: #ffffff; 
+                    background-color: rgba(255, 255, 255, 0.95); /* Semi-transparent white */
                     border-radius: 12px; 
                     box-shadow: 0 8px 20px rgba(0,0,0,0.1); 
                     text-align: center;
+                    position: relative; /* Above video */
+                    z-index: 5;
                 }
                 .product-card {
                     display: flex;
@@ -174,19 +203,23 @@ app.get('/', async (req, res) => {
                 .footer {
                     margin-top: 50px;
                     padding: 30px 20px;
-                    background-color: #2c3e50;
+                    background-color: rgba(44, 62, 80, 0.9); /* Semi-transparent dark blue */
                     color: #ecf0f1;
                     font-size: 0.9em;
                     border-radius: 0 0 12px 12px;
+                    position: relative; /* Above video */
+                    z-index: 5;
                 }
                 .footer-links a {
                     color: #87ceeb;
                     text-decoration: none;
                     margin: 0 15px;
-                    transition: color 0.3s;
+                    padding: 8px 15px;
+                    border-radius: 5px;
+                    transition: background-color 0.3s;
                 }
                 .footer-links a:hover {
-                    color: #fff;
+                    background-color: #34495e;
                 }
                 .trace-id { 
                     margin-top: 25px; 
@@ -195,9 +228,25 @@ app.get('/', async (req, res) => {
                     padding-top: 15px; 
                     border-top: 1px solid #eee; 
                 }
+                .message-box {
+                    padding: 15px;
+                    margin: 20px auto;
+                    max-width: 500px;
+                    border-radius: 8px;
+                    font-weight: 600;
+                    color: white;
+                    background-color: #28a745; /* Green for success */
+                    display: ${req.query.message ? 'block' : 'none'};
+                }
+                /* End of CSS */
             </style>
         </head>
         <body>
+            <video autoplay muted loop id="video-background">
+                <source src="https://assets.mixkit.co/videos/preview/mixkit-curved-road-on-a-mountain-surrounded-by-trees-1226-large.mp4" type="video/mp4">
+                Your browser does not support the video tag.
+            </video>
+
             <div class="navbar">
                 <a href="/" class="navbar-brand">🛍️ MyShop</a>
                 <div class="navbar-links">
@@ -209,6 +258,10 @@ app.get('/', async (req, res) => {
             </div>
 
             <div class="container">
+                <div class="message-box">
+                    ${req.query.message ? decodeURIComponent(req.query.message) : ''}
+                </div>
+                
                 <div class="product-card">
                     <img src="https://picsum.photos/id/1015/400/300" alt="Stylish Headphones" class="product-image">
                     <h1 class="product-title">Premium Wireless Headphones</h1>
@@ -218,7 +271,8 @@ app.get('/', async (req, res) => {
                         Designed for comfort and superior sound quality, perfect for music lovers and professionals alike. 
                         Long-lasting battery and crystal-clear calls.
                     </p>
-                    <a href="#" class="add-to-cart-btn">Add to Cart</a>
+                    
+                    <a href="/add-to-cart?sku=WH001" class="add-to-cart-btn">Add to Cart</a>
                 </div>
                 
                 <div class="footer">
@@ -238,9 +292,67 @@ app.get('/', async (req, res) => {
     `);
 });
 
+// ... (Rest of the routes /add-to-cart, /products, /cart, /account, /status, /simulate-error, /metrics remain unchanged) ...
+
+// ⭐ NEW ROUTE: Simulates adding a product to the cart
+app.get('/add-to-cart', async (req, res) => {
+    const sku = req.query.sku || 'UNKNOWN';
+    log('INFO', `Starting cart service transaction for SKU: ${sku}`, req);
+    
+    // Simulate database write/inventory check latency (critical operation)
+    await simulateWork(150, 400); 
+
+    // Increment the specific business metric
+    cartActionCount.inc({ product_sku: sku });
+    
+    log('SUCCESS', `Product SKU ${sku} successfully added to shopping cart.`, req);
+    
+    // Redirect back to the home page with a success message in the URL
+    res.redirect(`/?message=${encodeURIComponent('✅ Success! Wireless Headphones added to cart.')}`);
+});
+
+
+// ⭐ ENHANCED ROUTE: Products Page (Simulated Search)
+app.get('/products', async (req, res) => {
+    log('INFO', 'Products search service accessed. Simulating complex filtering.', req);
+    await simulateWork(200, 500); // Simulate high latency for a complex search/filter query
+
+    res.send(`<html><head><title>Products</title></head><body>
+        <h1>Products Catalog</h1>
+        <p>This page simulates a large product search query with high latency (200-500ms). Trace ID: ${req.traceId}</p>
+        <a href="/">Back Home</a>
+    </body></html>`);
+});
+
+// ⭐ ENHANCED ROUTE: Cart Page (Simulated Session Data)
+app.get('/cart', async (req, res) => {
+    log('INFO', 'Cart session data accessed. Simulating fast cache lookup.', req);
+    await simulateWork(10, 50); // Simulate low latency for fast session/cache lookup
+
+    res.send(`<html><head><title>Cart</title></head><body>
+        <h1>Shopping Cart</h1>
+        <p>This page simulates a quick session/cache lookup (10-50ms). Trace ID: ${req.traceId}</p>
+        <a href="/">Back Home</a>
+    </body></html>`);
+});
+
+// ⭐ ENHANCED ROUTE: Account Page (Simulated Profile Load)
+app.get('/account', async (req, res) => {
+    log('INFO', 'User profile service accessed. Simulating authentication check.', req);
+    await simulateWork(50, 150); // Simulate medium latency for DB read/auth check
+
+    res.send(`<html><head><title>Account</title></head><body>
+        <h1>My Account</h1>
+        <p>This page simulates an authentication and database profile load (50-150ms). Trace ID: ${req.traceId}</p>
+        <a href="/">Back Home</a>
+    </body></html>`);
+});
+
+
+// Status and Error routes remain the same for consistency
 app.get('/status', async (req, res) => {
     log('INFO', 'Health status check initiated.', req);
-    await simulateWork(10, 50); // Fast status check
+    await simulateWork(10, 50); 
 
     const status = Math.random() > 0.1 ? '✅ healthy' : '🚨 unhealthy';
     log('INFO', `Health status reported: ${status}`, req);
@@ -255,7 +367,7 @@ app.get('/status', async (req, res) => {
 
 app.get('/simulate-error', async (req, res) => {
     log('ERROR', 'Simulated application error occurred due to bad request data!', req);
-    await simulateWork(100, 300); // Latency before failure
+    await simulateWork(100, 300);
 
     res.status(500).json({
         error: 'Simulated internal server error generated for testing 5xx alerts and error logs.',
@@ -265,7 +377,7 @@ app.get('/simulate-error', async (req, res) => {
     });
 });
 
-// ---------------- Metrics Endpoint ----------------
+// Metrics Endpoint remains the same
 app.get('/metrics', async (req, res) => {
     try {
         log('DEBUG', 'Metrics endpoint accessed.', req);
@@ -273,33 +385,12 @@ app.get('/metrics', async (req, res) => {
         res.end(await register.metrics());
     } catch (err) {
         log('ERROR', `Metrics fetch failed: ${err.message}`, req);
-        // The middleware will record this as a 500 error
         res.status(500).end('Failed to fetch metrics.');
     }
 });
 
-// Dummy routes for the navbar (just return empty responses for now)
-app.get('/products', async (req, res) => {
-    log('INFO', 'Products page accessed.', req);
-    await simulateWork(50, 200);
-    res.send(`<html><head><title>Products</title></head><body><h1>Products Page</h1><p>More products coming soon! Trace ID: ${req.traceId}</p></body></html>`);
-});
-
-app.get('/cart', async (req, res) => {
-    log('INFO', 'Cart page accessed.', req);
-    await simulateWork(30, 100);
-    res.send(`<html><head><title>Cart</title></head><body><h1>Shopping Cart</h1><p>Your cart is empty. Trace ID: ${req.traceId}</p></body></html>`);
-});
-
-app.get('/account', async (req, res) => {
-    log('INFO', 'Account page accessed.', req);
-    await simulateWork(40, 120);
-    res.send(`<html><head><title>Account</title></head><body><h1>My Account</h1><p>User profile here. Trace ID: ${req.traceId}</p></body></html>`);
-});
-
 // ---------------- Start Server ----------------
 app.listen(PORT, () => {
-    // Start-up log does not have a req object, so we log directly
     console.log(JSON.stringify({
         level: 'INFO',
         timestamp: new Date().toISOString(),
