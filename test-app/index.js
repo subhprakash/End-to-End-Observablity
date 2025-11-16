@@ -75,39 +75,162 @@ function simulateWork(minMs, maxMs) {
 // ---------------- Routes ----------------
 
 app.get('/', async (req, res) => {
-    log('INFO', 'Home route accessed and simulating database query.', req);
-    await simulateWork(50, 150); // Simulate some work/latency
+    log('INFO', 'E-commerce Home/Product page accessed and simulating backend operations.', req);
+    await simulateWork(100, 300); // Simulate product data fetching, recommendations, etc.
 
     res.send(`
         <html>
-        <head><title>Cloud-Native Observability Demo</title>
-        <style>
-            body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; text-align:center; margin-top: 50px; background-color: #f4f7f6; color: #333; }
-            .container { max-width: 800px; margin: auto; padding: 20px; background-color: #ffffff; border-radius: 12px; box-shadow: 0 8px 16px rgba(0,0,0,0.1); }
-            h1 { color: #007bff; margin-bottom: 5px; }
-            h2 { color: #5cb85c; margin-top: 0; }
-            p { color: #555; }
-            ul { list-style: none; padding: 0; display: flex; justify-content: center; gap: 20px; margin-top: 30px;}
-            li a { text-decoration: none; padding: 10px 20px; border-radius: 5px; transition: background-color 0.3s; color: white; font-weight: bold; }
-            .metrics-link { background-color: #f39c12; }
-            .status-link { background-color: #2ecc71; }
-            .error-link { background-color: #e74c3c; }
-            li a:hover { opacity: 0.9; }
-            .trace-id { margin-top: 40px; font-size: 0.9em; color: #888; border-top: 1px solid #eee; padding-top: 10px; }
-        </style>
+        <head>
+            <title>E-Commerce Observability Demo</title>
+            <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap" rel="stylesheet">
+            <style>
+                body { 
+                    font-family: 'Poppins', sans-serif; 
+                    margin: 0; 
+                    background-color: #f0f2f5; 
+                    color: #333; 
+                    line-height: 1.6; 
+                }
+                .navbar {
+                    background-color: #ffffff;
+                    padding: 15px 30px;
+                    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                }
+                .navbar-brand {
+                    font-weight: 600;
+                    font-size: 1.5em;
+                    color: #007bff;
+                    text-decoration: none;
+                }
+                .navbar-links a {
+                    margin-left: 25px;
+                    text-decoration: none;
+                    color: #555;
+                    font-weight: 400;
+                    transition: color 0.3s;
+                }
+                .navbar-links a:hover {
+                    color: #007bff;
+                }
+                .container { 
+                    max-width: 960px; 
+                    margin: 40px auto; 
+                    padding: 20px; 
+                    background-color: #ffffff; 
+                    border-radius: 12px; 
+                    box-shadow: 0 8px 20px rgba(0,0,0,0.1); 
+                    text-align: center;
+                }
+                .product-card {
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    padding: 30px;
+                }
+                .product-image {
+                    width: 100%;
+                    max-width: 400px;
+                    height: auto;
+                    border-radius: 8px;
+                    margin-bottom: 25px;
+                    box-shadow: 0 4px 10px rgba(0,0,0,0.08);
+                }
+                .product-title {
+                    font-size: 2.2em;
+                    color: #333;
+                    margin-bottom: 10px;
+                    font-weight: 600;
+                }
+                .product-price {
+                    font-size: 1.8em;
+                    color: #28a745;
+                    font-weight: 600;
+                    margin-bottom: 20px;
+                }
+                .product-description {
+                    font-size: 1.1em;
+                    color: #666;
+                    max-width: 600px;
+                    margin: 0 auto 30px auto;
+                }
+                .add-to-cart-btn {
+                    background-color: #007bff;
+                    color: white;
+                    padding: 15px 35px;
+                    border: none;
+                    border-radius: 50px;
+                    font-size: 1.1em;
+                    cursor: pointer;
+                    transition: background-color 0.3s, transform 0.2s;
+                    text-decoration: none; /* Make it look like a button */
+                }
+                .add-to-cart-btn:hover {
+                    background-color: #0056b3;
+                    transform: translateY(-2px);
+                }
+                .footer {
+                    margin-top: 50px;
+                    padding: 30px 20px;
+                    background-color: #2c3e50;
+                    color: #ecf0f1;
+                    font-size: 0.9em;
+                    border-radius: 0 0 12px 12px;
+                }
+                .footer-links a {
+                    color: #87ceeb;
+                    text-decoration: none;
+                    margin: 0 15px;
+                    transition: color 0.3s;
+                }
+                .footer-links a:hover {
+                    color: #fff;
+                }
+                .trace-id { 
+                    margin-top: 25px; 
+                    font-size: 0.85em; 
+                    color: #aaa; 
+                    padding-top: 15px; 
+                    border-top: 1px solid #eee; 
+                }
+            </style>
         </head>
         <body>
+            <div class="navbar">
+                <a href="/" class="navbar-brand">🛍️ MyShop</a>
+                <div class="navbar-links">
+                    <a href="/">Home</a>
+                    <a href="/products">Products</a>
+                    <a href="/cart">Cart (0)</a>
+                    <a href="/account">Account</a>
+                </div>
+            </div>
+
             <div class="container">
-                <h1>🛰️ Cloud-Native Observability Demo App</h1>
-                <h2>A unified view of Logs, Metrics, & Traces</h2>
-                <p>This application is designed to generate rich **Logs (JSON format)**, **Metrics (Prometheus)**, and demonstrate **Trace Correlation**.</p>
-                <ul>
-                    <li><a href="/metrics" class="metrics-link">📊 Prometheus Metrics</a></li>
-                    <li><a href="/status" class="status-link">💡 Check App Status (Simulated Latency)</a></li>
-                    <li><a href="/simulate-error" class="error-link">🔥 Simulate Error Log (500 Status)</a></li>
-                </ul>
-                <div class="trace-id">
-                    <strong>Current Trace ID (for Logs):</strong> ${req.traceId}
+                <div class="product-card">
+                    <img src="https://picsum.photos/id/1015/400/300" alt="Stylish Headphones" class="product-image">
+                    <h1 class="product-title">Premium Wireless Headphones</h1>
+                    <p class="product-price">$199.99</p>
+                    <p class="product-description">
+                        Experience immersive audio with our state-of-the-art wireless headphones. 
+                        Designed for comfort and superior sound quality, perfect for music lovers and professionals alike. 
+                        Long-lasting battery and crystal-clear calls.
+                    </p>
+                    <a href="#" class="add-to-cart-btn">Add to Cart</a>
+                </div>
+                
+                <div class="footer">
+                    <p>Cloud-Native Observability Demo | Generate logs & metrics by interacting.</p>
+                    <div class="footer-links">
+                        <a href="/metrics">📊 Metrics Dashboard</a>
+                        <a href="/status">💡 Check App Status</a>
+                        <a href="/simulate-error">🔥 Simulate Error</a>
+                    </div>
+                    <div class="trace-id">
+                        <strong>Current Request Trace ID:</strong> ${req.traceId}
+                    </div>
                 </div>
             </div>
         </body>
@@ -155,12 +278,31 @@ app.get('/metrics', async (req, res) => {
     }
 });
 
+// Dummy routes for the navbar (just return empty responses for now)
+app.get('/products', async (req, res) => {
+    log('INFO', 'Products page accessed.', req);
+    await simulateWork(50, 200);
+    res.send(`<html><head><title>Products</title></head><body><h1>Products Page</h1><p>More products coming soon! Trace ID: ${req.traceId}</p></body></html>`);
+});
+
+app.get('/cart', async (req, res) => {
+    log('INFO', 'Cart page accessed.', req);
+    await simulateWork(30, 100);
+    res.send(`<html><head><title>Cart</title></head><body><h1>Shopping Cart</h1><p>Your cart is empty. Trace ID: ${req.traceId}</p></body></html>`);
+});
+
+app.get('/account', async (req, res) => {
+    log('INFO', 'Account page accessed.', req);
+    await simulateWork(40, 120);
+    res.send(`<html><head><title>Account</title></head><body><h1>My Account</h1><p>User profile here. Trace ID: ${req.traceId}</p></body></html>`);
+});
+
 // ---------------- Start Server ----------------
 app.listen(PORT, () => {
     // Start-up log does not have a req object, so we log directly
     console.log(JSON.stringify({
         level: 'INFO',
         timestamp: new Date().toISOString(),
-        message: `Server running on http://localhost:${PORT}`
+        message: `E-commerce Demo App running on http://localhost:${PORT}`
     }));
 });
