@@ -40,22 +40,26 @@ pipeline {
             }
         }
 
-        stage('4. Open Application & Dashboards') {
+        // 🟢 FIXED STAGE: Removed the interactive 'start' commands
+        stage('4. Display Dashboards URLs') {
             steps {
                 script {
-                    echo "🔍 Checking running containers and opening dashboards..."
-                    bat 'docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"' // Combined verification
+                    echo "🔍 Checking running containers and displaying dashboard URLs..."
+                    // Use 'docker ps' for non-interactive verification
+                    bat 'docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"'
                     
-                    // Opening the URLs (Note: 'start' command is Windows-specific/interactive)
-                    bat """
-                    start http://localhost:8085
-                    start http://localhost:3000
-                    start http://localhost:5601
-                    """
+                    // The interactive 'start' commands are now GONE.
+                    
                     echo """
-                    ✅ Application:  http://localhost:8085
-                    📊 Grafana:      http://localhost:3000 (admin / admin)
-                    🧩 Kibana:       http://localhost:5601
+                    
+                    ********************************************************************************
+                    * ✅ Stack is running. Use these URLs in your browser to view the dashboards:  *
+                    ********************************************************************************
+                    * App:      http://localhost:8085
+                    * Grafana:  http://localhost:3000 (admin / admin)
+                    * Kibana:   http://localhost:5601
+                    ********************************************************************************
+                    
                     """
                 }
             }
@@ -65,12 +69,10 @@ pipeline {
         stage('5. Wait for Testing (15 mins)') {
             steps {
                 script {
-                    echo "⏳ Stack is running for 15 minutes. Check application and dashboards now."
+                    echo "⏳ Stack is running for 15 minutes. Interact with the application to generate data."
                     
-                    // Use timeout to run a long action. This ensures Jenkins doesn't hang forever.
                     timeout(time: 15, unit: 'MINUTES') {
-                        // sleep command pauses the execution for 900 seconds (15 minutes)
-                        sleep(900)
+                        sleep(900) // 900 seconds = 15 minutes
                     }
                     
                     echo "⏱ 15 minutes passed. Proceeding to cleanup."
