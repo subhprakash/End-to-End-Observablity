@@ -263,7 +263,7 @@ app.get('/', async (req, res) => {
                 </div>
                 
                 <div class="product-card">
-                    <img src="https://lh3.googleusercontent.com/gg/AIJ2gl91X3HgU4vLpiJAPCwlJ1uYloIci1TbBEQuKRU-FCyUosBGqjwliK2M0tPsoZr-2C36_0oIW8TfneJcBsj_-4So_d985lF6Lb_Y8L7obp5SzFDBWGd6VG833HsnZ40cb8wpmg3K-0F6CMqz8HsWiaBfiw_V2rNSYEdLOBDYDae5XpbhQCvMCYm1tQaNwZtg1sUWhooiiCO3keUvSNn5JlUkVT4wr-xQ26wcpSRgXjOC2VCAl6AeleIOXCO-RtU5wWQfURJTIh0vfC5h9mu35HrVl0LlvlPicOJ_qRanUJzMlaCwX0Uo10WRCvTxT3Lg_r_oReD7e2OksF0wtyExY-s=s1024-rj" alt="Stylish Headphones" class="product-image">
+                    <img src="https://ubonindia.com/cdn/shop/files/HP-65_copy_1.jpg?v=1758175449&width=600" alt="Stylish Headphones" class="product-image">
                     <h1 class="product-title">Premium Wireless Headphones</h1>
                     <p class="product-price">$199.99</p>
                     <p class="product-description">
