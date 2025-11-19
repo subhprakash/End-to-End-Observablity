@@ -263,7 +263,8 @@ app.get('/', async (req, res) => {
                 </div>
                 
                 <div class="product-card">
-                    <img src="https://ubonindia.com/cdn/shop/files/HP-65_copy_1.jpg?v=1758175449&width=600" alt="Stylish Headphones" class="product-image">
+                    <img src="https://ubonindia.com/cdn/shop/files/HP-65_copy_1.jpg?v=1758175449&width=600
+                    " alt="Stylish Headphones" class="product-image">
                     <h1 class="product-title">Premium Wireless Headphones</h1>
                     <p class="product-price">$199.99</p>
                     <p class="product-description">
