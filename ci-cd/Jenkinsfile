@@ -2,7 +2,7 @@ pipeline {
     agent any
 
     parameters {
-        // I've kept CLEANUP but modified Stage 6 to always run after the wait.
+        
         booleanParam(name: 'CLEANUP', defaultValue: false, description: 'Stop and remove containers after build')
     }
 
